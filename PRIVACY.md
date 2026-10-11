@@ -1,10 +1,10 @@
 # Privacy Policy for gTabs - AI Tab Organizer
 
-**Last updated:** April 3, 2026
+**Last updated:** October 11, 2026
 
 ## Summary
 
-gTabs does not collect, transmit, or store any personal data on external servers. All extension data stays in your browser's local storage. When you choose to use a cloud LLM provider, tab titles and URLs are sent to that provider's API — and only when you explicitly trigger an organize action.
+gTabs does not collect, transmit, or store any personal data on external servers. All extension data stays in your browser's local storage. When you choose to use a cloud LLM provider, tab titles and URLs are sent to that provider's API — and when you trigger an organize action or enable automatic/scheduled organizing. Model discovery and connection tests also contact the selected endpoint.
 
 ## Data Collection
 
@@ -25,7 +25,7 @@ The following data is stored in your browser's local `chrome.storage` area and n
 - **Pinned groups** — group names you've pinned to survive re-organization
 - **Usage statistics** — organize count and tabs grouped count, stored locally for your reference
 
-You can export or delete all stored data at any time from the extension's settings page.
+Settings exports exclude API keys. Connection profiles, including their credentials, remain in local browser storage. To remove all extension data, remove the extension or clear its local storage.
 
 ## Data Sent to Third Parties
 
@@ -48,9 +48,13 @@ This data is sent directly from your browser to the provider's API endpoint. gTa
 - Groq: https://groq.com/privacy-policy
 - xAI: https://x.ai/legal/privacy-policy
 
+### Model discovery and connection tests
+
+Refreshing models sends your configured API credential to the selected endpoint and receives its catalog; it does not send tab titles or URLs. A connection test sends a short test prompt. Custom endpoint permissions are requested for the specific origin. An endpoint hosted remotely is a third-party service even if it uses the Ollama or OpenAI-compatible protocol.
+
 ### When you use a local LLM provider
 
-If you use **Ollama** or **Chrome Built-in AI**, all processing happens on your device. No tab data is sent to any external server.
+If you use **Ollama on your own device** or **Chrome Built-in AI**, inference happens on your device. Chrome may download its model separately. No tab data is sent to any external server.
 
 ## Permissions
 
@@ -64,6 +68,7 @@ gTabs requests the following Chrome permissions:
 | `alarms` | Run scheduled re-organization and auto-organize checks |
 | `contextMenus` | Add right-click menu options for quick access |
 | `windows` | Support consolidate-windows feature |
+| `favicon` | Display tab icons using Chrome’s favicon cache |
 | Host permissions | Send requests to the LLM API endpoint you selected |
 
 ## Children's Privacy

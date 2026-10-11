@@ -1,6 +1,6 @@
-import type { Color, GroupSuggestion, TabInfo, CorrectionEntry, RejectionEntry } from './types';
+import type { Color, GroupSuggestion, TabInfo, CorrectionEntry, RejectionEntry, MessageType } from './types';
 import { COLORS } from './types';
-import { getSuggestions, getSettings, saveSettings } from './storage';
+import { getSuggestions, saveSuggestions, getSettings, saveSettings } from './storage';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -18,6 +18,37 @@ const costText = $<HTMLSpanElement>('cost-text');
 
 let currentSuggestions: GroupSuggestion[] = [];
 let originalSuggestions: GroupSuggestion[] = [];
+const excludedTabs = new Set<number>();
+const btnCancel = $<HTMLButtonElement>('cancel-review');
+const COLOR_HEX: Record<Color, string> = { grey: '#737871', blue: '#5281e8', red: '#cb4d4d', yellow: '#ddb62e', green: '#4a9546', pink: '#cb6497', purple: '#9675d0', cyan: '#3a9fab', orange: '#cb803d' };
+
+function setReviewMode(review: boolean) {
+  $('view-title').textContent = review ? 'Review your groups' : 'A little less clutter.';
+  $('view-description').textContent = review ? 'Edit your groups and leave out any tabs before applying.' : 'Turn your open tabs into a calmer workspace. Review every group before applying.';
+  $('organize-actions').hidden = review;
+  $('empty-state').hidden = review;
+  btnCancel.hidden = !review;
+}
+
+function updateApplyLabel() {
+  const groups = currentSuggestions.filter(g => g.tabs.some(t => !excludedTabs.has(t.id)));
+  btnApply.textContent = `Apply groups (${groups.length})`;
+  btnApply.disabled = groups.length === 0;
+}
+
+function favicon(url: string): string {
+  try {
+    const u = new URL(chrome.runtime.getURL('/_favicon/'));
+    u.searchParams.set('pageUrl', url);
+    u.searchParams.set('size', '32');
+    return u.href;
+  } catch { return 'icons/ui/globe.svg'; }
+}
+
+function domain(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
+}
+
 
 function clearSuggestionUi() {
   currentSuggestions = [];
@@ -25,6 +56,8 @@ function clearSuggestionUi() {
   searchInput.value = '';
   tabSearchResults.innerHTML = '';
   btnApply.hidden = true;
+  excludedTabs.clear();
+  setReviewMode(false);
 }
 
 function setStatus(msg: string, isError = false) {
@@ -36,7 +69,7 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function sendMsg(msg: Record<string, unknown>): Promise<Record<string, unknown> | undefined> {
+function sendMsg(msg: Record<string, unknown>): Promise<Extract<MessageType, {type: 'status'}> | undefined> {
   return new Promise(resolve => chrome.runtime.sendMessage(msg, resolve));
 }
 
@@ -70,9 +103,13 @@ function computeCorrections(original: GroupSuggestion[], current: GroupSuggestio
   return corrections;
 }
 
-function renderSuggestions(suggestions: GroupSuggestion[]) {
+function renderSuggestions(suggestions: GroupSuggestion[], resetOriginal = true) {
   currentSuggestions = suggestions;
-  originalSuggestions = deepCloneSuggestions(suggestions);
+  if (resetOriginal) {
+    originalSuggestions = deepCloneSuggestions(suggestions);
+    excludedTabs.clear();
+  }
+  setReviewMode(suggestions.length > 0);
   container.innerHTML = '';
   tabSearchResults.innerHTML = '';
 
@@ -87,15 +124,22 @@ function renderSuggestions(suggestions: GroupSuggestion[]) {
     card.className = 'card';
     card.innerHTML = `
       <div class="card-header">
-        <input class="group-name" value="${esc(g.name)}" data-i="${i}" />
-        <select class="group-color" data-i="${i}">
-          ${COLORS.map(c => `<option value="${c}" ${c === g.color ? 'selected' : ''}>${c}</option>`).join('')}
-        </select>
-        <button class="pin-group" data-i="${i}" title="Pin this group (survives re-org)">&#x1F4CC;</button>
-        <button class="remove-group" data-i="${i}">&times;</button>
+        <span class="group-dot" style="--group-color:${COLOR_HEX[g.color]}" aria-hidden="true"></span>
+        <input class="group-name" aria-label="Rename group ${esc(g.name)}" value="${esc(g.name)}" data-i="${i}" />
+        <span class="group-count">${g.tabs.length} tabs</span>
+        <div class="group-tools">
+          <button class="icon-btn group-menu-toggle" aria-label="Options for ${esc(g.name)}" aria-expanded="false"><img src="icons/ui/dots-three.svg" alt=""></button>
+          <div class="group-menu" hidden>
+            <label>Group color<select class="group-color" data-i="${i}">
+              ${COLORS.map(c => `<option value="${c}" ${c === g.color ? 'selected' : ''}>${c}</option>`).join('')}
+            </select></label>
+            <button class="btn-ghost pin-group" data-i="${i}"><img src="icons/ui/push-pin.svg" alt="">Pin group</button>
+          </div>
+        </div>
+        <button class="icon-btn remove-group" data-i="${i}" aria-label="Remove suggested group ${esc(g.name)}" title="Leave this group unapplied"><img src="icons/ui/x.svg" alt=""></button>
       </div>
       <ul class="tab-list">
-        ${g.tabs.map(t => `<li title="${esc(t.url)}">${esc(t.title || t.url)}</li>`).join('')}
+        ${g.tabs.map(t => `<li title="${esc(t.url)}"><label class="tab-toggle"><input type="checkbox" class="include-tab" data-id="${t.id}" aria-label="Include ${esc(t.title || t.url)}" ${excludedTabs.has(t.id) ? '' : 'checked'}><img class="tab-icon" src="${esc(favicon(t.url))}" alt=""><span class="tab-title">${esc(t.title || t.url)}</span><span class="tab-domain">${esc(domain(t.url))}</span></label></li>`).join('')}
       </ul>`;
     container.appendChild(card);
   }
@@ -109,6 +153,8 @@ function renderSuggestions(suggestions: GroupSuggestion[]) {
   container.querySelectorAll<HTMLSelectElement>('.group-color').forEach(el =>
     el.addEventListener('change', () => {
       currentSuggestions[Number(el.dataset.i)].color = el.value as Color;
+      const dot = el.closest('.card')?.querySelector<HTMLElement>('.group-dot');
+      dot?.style.setProperty('--group-color', COLOR_HEX[el.value as Color]);
     }),
   );
 
@@ -150,11 +196,23 @@ function renderSuggestions(suggestions: GroupSuggestion[]) {
       }
 
       currentSuggestions.splice(idx, 1);
-      renderSuggestions(currentSuggestions);
+      renderSuggestions(currentSuggestions, false);
     }),
   );
 
+  container.querySelectorAll<HTMLImageElement>('.tab-icon').forEach(img => img.addEventListener('error', () => { img.src = 'icons/ui/globe.svg'; }, { once: true }));
+  container.querySelectorAll<HTMLInputElement>('.include-tab').forEach(input => input.addEventListener('change', () => {
+    const id = Number(input.dataset.id);
+    if (input.checked) excludedTabs.delete(id); else excludedTabs.add(id);
+    updateApplyLabel();
+  }));
+  container.querySelectorAll<HTMLButtonElement>('.group-menu-toggle').forEach(button => button.addEventListener('click', () => {
+    const menu = button.nextElementSibling as HTMLElement;
+    menu.hidden = !menu.hidden;
+    button.setAttribute('aria-expanded', String(!menu.hidden));
+  }));
   btnApply.hidden = false;
+  updateApplyLabel();
 }
 
 // --- Tab search ---
@@ -232,9 +290,12 @@ function setFocusedCard(idx: number) {
 }
 
 document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); searchInput.focus(); return; }
   const inInput = document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLSelectElement;
 
   if (e.key === 'Escape') {
+    container.querySelectorAll<HTMLElement>('.group-menu').forEach(menu => { menu.hidden = true; });
+    container.querySelectorAll<HTMLElement>('.group-menu-toggle').forEach(button => button.setAttribute('aria-expanded', 'false'));
     searchInput.value = '';
     tabSearchResults.innerHTML = '';
     container.querySelectorAll<HTMLElement>('.tab-list li').forEach(li => { li.style.display = ''; li.className = ''; });
@@ -265,10 +326,10 @@ async function doOrganize(ungroupedOnly: boolean) {
   setStatus('Organizing...');
   btnOrganize.disabled = true;
   btnOrganizeUngrouped.disabled = true;
-  container.innerHTML = '';
   btnApply.hidden = true;
 
-  const res = await sendMsg({ type: ungroupedOnly ? 'organize-ungrouped' : 'organize' });
+  let res: Awaited<ReturnType<typeof sendMsg>>;
+  try { res = await sendMsg({ type: ungroupedOnly ? 'organize-ungrouped' : 'organize' }); } catch (error) { setStatus(error instanceof Error ? error.message : 'Organization failed', true); }
 
   btnOrganize.disabled = false;
   btnOrganizeUngrouped.disabled = false;
@@ -293,14 +354,18 @@ btnApply.addEventListener('click', async () => {
   setStatus('Applying...');
   btnApply.disabled = true;
 
-  const corrections = computeCorrections(originalSuggestions, currentSuggestions);
+  const selected = currentSuggestions.map(g => ({ ...g, name: g.name.trim(), tabs: g.tabs.filter(t => !excludedTabs.has(t.id)) })).filter(g => g.tabs.length > 0);
+  if (selected.some(g => !g.name)) { setStatus('Give every group a name before applying.', true); btnApply.disabled = false; return; }
+  const corrections = computeCorrections(originalSuggestions, selected);
+  let res: Awaited<ReturnType<typeof sendMsg>>;
+  try { res = await sendMsg({ type: 'apply', suggestions: selected }); } catch (error) { setStatus(error instanceof Error ? error.message : 'Could not apply groups.', true); btnApply.disabled = false; return; }
+  btnApply.disabled = false;
+  if (!res || res.error) { setStatus(res?.error || 'No response — try again', true); return; }
   if (corrections.length > 0) {
-    sendMsg({ type: 'record-corrections', corrections: { timestamp: Date.now(), corrections } });
+    await sendMsg({ type: 'record-corrections', corrections: { timestamp: Date.now(), corrections } });
   }
 
-  await sendMsg({ type: 'apply', suggestions: currentSuggestions });
   setStatus('Applied!');
-  btnApply.disabled = false;
   clearSuggestionUi();
   await refreshFooter();
 });
@@ -327,9 +392,9 @@ async function refreshFooter() {
     statsText.textContent = `${statsRes.stats.totalOrganizations} organizes · ${statsRes.stats.totalTabsGrouped} tabs`;
   }
 
-  if (costsRes?.costs?.totalCost > 0) {
-    costText.textContent = `~$${costsRes.costs.totalCost.toFixed(4)} total`;
-  }
+  const costs = costsRes?.costs;
+  if (costs && costs.totalCost > 0) costText.textContent = `~$${costs.totalCost.toFixed(4)} tracked`;
+  if (costs?.unpricedCalls) costText.textContent = 'Some costs unknown';
 }
 
 // --- Init ---
@@ -342,3 +407,5 @@ async function refreshFooter() {
   }
   await refreshFooter();
 })();
+
+btnCancel.addEventListener('click', async () => { await saveSuggestions(null); clearSuggestionUi(); setStatus('Review canceled. Your tabs are unchanged.'); });

@@ -96,6 +96,7 @@ export function resetAllMocks() {
 let groupIdCounter = 100;
 
 (globalThis as any).chrome = {
+  permissions: { contains: vi.fn(async () => true), request: vi.fn(async () => true) },
   tabs: {
     query: vi.fn(() => Promise.resolve([])),
     group: vi.fn(() => Promise.resolve(groupIdCounter++)),

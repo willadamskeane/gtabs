@@ -77,19 +77,19 @@ describe('isGroupedTab – edge cases', () => {
 
 describe('calculateCost – edge cases', () => {
   it('handles very large token counts', () => {
-    const cost = calculateCost('claude-sonnet-4-6', 1_000_000_000, 0);
+    const cost = calculateCost('future-model', 1_000_000_000, 0, [3, 15]);
     expect(cost).toBeCloseTo(3000, 0);
   });
   it('handles fractional token counts', () => {
-    const cost = calculateCost('gpt-4.1', 0.5, 0.5);
+    const cost = calculateCost('future-model', 0.5, 0.5, [2, 8]);
     expect(cost).toBeGreaterThan(0);
   });
   it('handles negative token counts', () => {
-    const cost = calculateCost('claude-haiku-4-5', -100, -100);
-    expect(cost).toBeLessThan(0); // negative input = negative cost (no special handling)
+    const cost = calculateCost('future-model', -100, -100, [1, 5]);
+    expect(cost).toBe(0); // Invalid negative usage never reduces tracked spending.
   });
   it('returns 0 for openrouter/free model', () => {
-    expect(calculateCost('openrouter/free', 100_000, 100_000)).toBe(0);
+    expect(calculateCost('new-free-model', 100_000, 100_000, [0, 0])).toBe(0);
   });
 });
 

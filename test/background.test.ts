@@ -67,12 +67,12 @@ describe('isGroupedTab', () => {
 describe('calculateCost', () => {
   it('computes correct cost for a known model', () => {
     // claude-sonnet-4-6: $3/M input, $15/M output
-    const cost = calculateCost('claude-sonnet-4-6', 1_000_000, 1_000_000);
+    const cost = calculateCost('future-model', 1_000_000, 1_000_000, [3, 15]);
     expect(cost).toBeCloseTo(18, 5);
   });
 
-  it('returns 0 for an unknown model', () => {
-    expect(calculateCost('unknown-model-xyz', 100, 100)).toBe(0);
+  it('returns unknown when the catalog provides no pricing', () => {
+    expect(calculateCost('unknown-model-xyz', 100, 100)).toBeNull();
   });
 
   it('returns 0 when both token counts are 0', () => {
@@ -81,18 +81,18 @@ describe('calculateCost', () => {
 
   it('computes cost with only input tokens', () => {
     // gpt-4.1: $2/M input, $8/M output
-    const cost = calculateCost('gpt-4.1', 500_000, 0);
+    const cost = calculateCost('future-model', 500_000, 0, [2, 8]);
     expect(cost).toBeCloseTo(1.0, 5);
   });
 
   it('computes cost with only output tokens', () => {
     // gpt-4.1: $2/M input, $8/M output
-    const cost = calculateCost('gpt-4.1', 0, 500_000);
+    const cost = calculateCost('future-model', 0, 500_000, [2, 8]);
     expect(cost).toBeCloseTo(4.0, 5);
   });
 
-  it('returns 0 for free models (gemini-nano)', () => {
-    expect(calculateCost('gemini-nano', 1_000_000, 1_000_000)).toBe(0);
+  it('returns 0 when the catalog explicitly reports a free model', () => {
+    expect(calculateCost('free-from-catalog', 1_000_000, 1_000_000, [0, 0])).toBe(0);
   });
 });
 

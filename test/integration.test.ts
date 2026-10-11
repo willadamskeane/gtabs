@@ -68,7 +68,9 @@ describe('E2E Integration: Message dispatch → Background → Storage', () => {
     expect(res.costs.totalInputTokens).toBe(0);
   });
 
-  it('costs accumulate after organize with LLM usage', async () => {
+  it('costs accumulate after organize with reported pricing', async () => {
+    const { getSettings, saveSettings } = await import('../src/storage');
+    await saveSettings({ ...await getSettings(), modelPricing: [2, 8] });
     vi.mocked(chrome.tabs.query).mockResolvedValue([
       { id: 1, url: 'https://github.com', title: 'GH', groupId: -1 },
       { id: 2, url: 'https://docs.com', title: 'Docs', groupId: -1 },

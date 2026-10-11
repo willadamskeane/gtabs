@@ -1,295 +1,44 @@
-# gTabs — AI Tab Organizer for Chrome
+# gTabs — Quiet Workspace
 
-<div align="center">
-  <br/>
+An AI tab organizer for Chrome, redesigned around a calm, readable review flow. This fork is based on [vaddisrinivas/gtabs](https://github.com/vaddisrinivas/gtabs), under its MIT license.
 
-  **Your tabs are a mess. One click fixes that.**
+## Install
 
-  gTabs uses any LLM to intelligently organize your Chrome tabs into color-coded groups.
-  It learns from your behavior, remembers your corrections, and gets smarter over time.
+Extract `gtabs-quiet-workspace-0.6.0.zip` into a permanent folder. Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the extracted folder. Pin gTabs, then open Settings to configure a connection.
 
-  <br/>
+Alternatively, build from source:
 
-  [Star on GitHub](https://github.com/vaddisrinivas/gtabs) · [Install](https://github.com/vaddisrinivas/gtabs/releases) · [Report Issue](https://github.com/vaddisrinivas/gtabs/issues)
-
-  [![✅ Merged — xyNNN/awesome-chrome](https://img.shields.io/badge/%E2%9C%85%20Merged-xyNNN%2Fawesome--chrome-green?style=flat-square)](https://github.com/xyNNN/awesome-chrome)
-
-  <br/>
-</div>
-
-![gTabs demo](store-assets/demo-v05.gif)
-
----
-
-## What's New in v0.5.1
-
-**Service Worker Reliability** — gTabs now rebuilds Chrome context menus with a full cleanup pass, serializes overlapping tab-group rebuilds, and ignores duplicate context menu ID errors during reload. This fixes MV3 service worker startup failures like `Cannot create item with duplicate id gtabs-add-to-group`.
-
-## What's New in v0.5
-
-**Smart Learning** — gTabs now learns from every interaction. Corrections you make before applying count 3x. Groups you remove are remembered and avoided. Domain affinity is weighted by frequency and recency with a 14-day decay half-life.
-
-**Scheduled Re-org** — Set daily or weekly automatic re-organization at a time you choose. Wake up to perfectly organized tabs.
-
-**Pinned Groups** — Mark groups as permanent so they survive re-organization. Pin "Comms" once, never lose it.
-
-**Group Health** — Drift detection warns when groups become incoherent. Merge/split suggestions appear when groups overlap or grow too large.
-
-**Smarter Routing** — New tabs opened from an existing grouped tab automatically join that group. Path-level affinity means `github.com/myorg` and `github.com/trending` can map to different groups.
-
----
-
-## Screenshots
-
-| Settings & Providers | Smart Learning | Organized Tabs |
-|:---:|:---:|:---:|
-| ![Settings](store-assets/screenshot-settings-1280x800.png) | ![Smart Learning](store-assets/screenshot-smart-learning-1280x800.png) | ![Organized](store-assets/screenshot-organized-1280x800.png) |
-
----
-
-## Features
-
-### Organize
-
-| | |
-|---|---|
-| **One-click Organize All** | AI groups every tab in your window by topic |
-| **Ungrouped Only** | Only touches tabs not already in a group |
-| **Suggestion-first UX** | Review, rename, recolor, remove — then apply |
-| **Undo** | Instantly restores the previous tab arrangement |
-| **Smart Merge** | Pre-assigns tabs to existing groups by title similarity before calling the LLM |
-
-### Learn
-
-| | |
-|---|---|
-| **Weighted Affinity** | Tracks how often each domain is placed in each group, decays stale patterns over 14 days |
-| **Path-level Affinity** | `github.com/myorg` maps separately from `github.com/trending` for multi-tenant sites |
-| **Correction Tracking** | When you rename groups or move tabs before applying, those edits are remembered as 3x signals |
-| **Rejection Memory** | When you remove a suggested group, gTabs remembers to avoid that grouping for 30 days |
-| **Pattern Mining** | Discovers domains that are frequently grouped together and uses them as co-occurrence hints |
-| **Opener Awareness** | New tabs opened from an existing grouped tab prefer joining that group |
-
-### Maintain
-
-| | |
-|---|---|
-| **Scheduled Re-org** | Daily or weekly automatic re-organization at a configurable time |
-| **Pinned Groups** | Mark groups as permanent — they survive re-organization |
-| **Group Drift Detection** | Warns when groups become incoherent and may need refreshing |
-| **Merge/Split Suggestions** | Detects overlapping groups (>60%) and oversized groups (>10 tabs, >5 domains) |
-| **Stale Tab Purge** | Remove inactive tabs older than a configurable threshold |
-
-### Tools
-
-| | |
-|---|---|
-| **Focus Mode** | Collapses all groups except the active one |
-| **Sort Groups** | Alphabetically sorts tabs by domain within each group |
-| **Clear Groups** | Ungroups everything in the current window |
-| **Duplicate Detection** | Finds tabs with the same URL |
-| **Zero-LLM Fast Routing** | Routes new tabs into existing groups via affinity — no API calls |
-| **Domain Rules** | Hard-wire `github.com` or `*.example.com` to `Dev`, always, skipping the LLM entirely |
-
-### Providers
-
-| Provider | Cost | Setup |
-|----------|------|-------|
-| **Groq** | Free (rate limited) | [Get key](https://console.groq.com/keys) — no credit card |
-| **Grok (xAI)** | $25 free credit | [Get key](https://console.x.ai) |
-| **OpenRouter** | Free models available | [Get key](https://openrouter.ai/keys) |
-| **Ollama** | Free (local) | [Install](https://ollama.com/download) — no key needed |
-| **Chrome AI** | Free (local) | [Setup guide below](#chrome-ai-gemini-nano-setup) — two flags, no account |
-| **Anthropic** | Paid | [Get key](https://console.anthropic.com/settings/keys) |
-| **OpenAI** | Paid | [Get key](https://platform.openai.com/api-keys) |
-
----
-
-## Chrome AI (Gemini Nano) Setup
-
-Chrome AI runs Gemini Nano directly inside Chrome — no API key, no account, no cost, no data leaving your machine. It is the default provider in gTabs.
-
-### Requirements
-
-- Chrome 127 or later (stable, beta, or canary)
-- Two flags enabled
-
-### Steps
-
-1. Paste the following URL into Chrome's address bar and set the flag to **Enabled**:
-   ```
-   chrome://flags/#prompt-api-for-gemini-nano
-   ```
-
-2. Paste this URL and set to **Enabled BypassPerfRequirement**:
-   ```
-   chrome://flags/#optimization-guide-on-device-model
-   ```
-   > The BypassPerfRequirement variant allows model download on any hardware. Without it, Chrome may skip the download on lower-spec machines.
-
-3. Click **Relaunch** at the bottom of the flags page.
-
-4. Open gTabs Settings → Provider tab → click **Check again**. Once detected, the Chrome AI card will show **FREE** and become selectable.
-
-> **Note:** The Gemini Nano model (~1 GB) downloads automatically in the background after you enable the flags. The first organization may be slower while the model loads. Subsequent runs are instant.
-
-### Fallback
-
-If Chrome AI is not available (older Chrome, unsupported OS, or flags not set), gTabs will show a setup guide directly in the settings page with copy buttons for each flag URL. You can also click **Use Groq instead** to switch to Groq's free API in one click.
-
----
-
-## Quick Start
-
-### Install from release
-
-1. Download `gtabs-extension.zip` from [Releases](https://github.com/vaddisrinivas/gtabs/releases)
-2. Unzip anywhere
-3. Open `chrome://extensions` → enable **Developer mode**
-4. **Load unpacked** → select the unzipped folder
-5. Pin gTabs to your toolbar
-
-### Build from source
-
-```bash
-git clone https://github.com/vaddisrinivas/gtabs.git
-cd gtabs
-npm install
-npm run build    # → dist/
+```sh
+npm ci
+npm run build
+npm run package
 ```
 
-### Configure (30 seconds)
+Load `dist/` as an unpacked extension. Chrome 120 or newer is required for the extension; Chrome's built-in AI has additional browser, device, and availability requirements.
 
-1. Click gTabs icon → **Settings**
-2. Pick a provider → paste API key → pick model → **Test**
-3. Return to popup → **Organize All**
+## Organize with a review
 
----
+Choose **Organize tabs**, review the suggested groups, rename them or change colors, and exclude individual tabs before applying. The review list scrolls while Apply and Cancel remain visible. Search filters tabs; Undo restores the previous grouping. Pinned groups, domain rules, learning, workspaces, snooze, scheduled organizing, and power tools remain available.
 
-## How It Works
+## Models follow the provider
 
-```
-User clicks "Organize All"
-  |
-  |-- Domain rules applied instantly (no LLM)
-  |
-  |-- Smart merge: title-match ungrouped tabs to existing groups
-  |
-  |-- Remaining tabs sent to LLM with:
-  |     |-- Weighted affinity   (github.com -> "Dev" 12x, recent)
-  |     |-- Correction signals  (user moved amazon.com to "Shopping" 3x)
-  |     |-- Rejection signals   (AVOID: news.com in "Dev")
-  |     |-- Co-occurrence       ([github.com, stackoverflow.com] often together)
-  |     |-- Opener hints        (Tab 5 opened from Tab 2)
-  |     |-- History patterns    (50 past groupings summarized)
-  |     '-- Prompt: "Group into max N groups, return JSON"
-  |
-  |-- Response parsed -> editable suggestion cards shown
-  |
-  '-- User reviews -> Apply -> chrome.tabs.group()
-        |-- Weighted affinity updated (frequency + timestamp)
-        |-- Path-level affinity updated for multi-tenant sites
-        |-- History recorded, costs tracked
-        '-- Corrections captured if user edited before applying
+There is no built-in cloud model catalog or default cloud model ID. Settings fetches the provider's current model list. Refresh after changing credentials or an endpoint, then choose a chat-capable model or enter its ID manually. An unavailable saved ID is preserved so outages and catalog changes do not silently change your configuration.
+
+Supported connections include OpenAI, Anthropic, OpenRouter, Groq, xAI, Ollama, Chrome built-in AI, and custom OpenAI-compatible servers. Anthropic discovery follows pagination. Ollama discovers installed models through `/api/tags`. Chrome manages its built-in model.
+
+Provider credentials are stored locally and isolated between connection profiles. Custom endpoints request access to their origin when you click Refresh models. Changing a custom endpoint's origin clears the previous key.
+
+OpenRouter's free connection is filtered using provider-reported zero input/output prices. It refuses calls without verified zero pricing. Other catalogs may omit pricing; gTabs records token usage without treating unknown prices as free. A configured spending cap blocks unpriced cloud calls. All cost figures are estimates and may differ from provider bills.
+
+## Development and verification
+
+```sh
+npm run typecheck
+npm test
+npm run build
+npm run dev -- --port 4173
 ```
 
----
+The browser preview uses simulated tabs, storage, permissions, and model responses. Its fixture is never included in the extension package. Preview interactions do not organize real browser tabs or contact providers. Test the unpacked extension in a real Chrome profile before distributing it.
 
-## Architecture
-
-```
-Popup / Options UI
-       |
-Background Service Worker
-   |-- LLM Provider Adapter (OpenAI, Anthropic, Groq, xAI, Ollama, Chrome AI)
-   |-- Grouper (prompt builder, parser, domain rules, title matching)
-   |-- Storage (weighted affinity, corrections, rejections, co-occurrence, history)
-   '-- Chrome APIs (tabs, tabGroups, alarms, storage)
-```
-
-| File | Role |
-|------|------|
-| `types.ts` | All interfaces — weighted affinity, corrections, rejections, settings |
-| `storage.ts` | Chrome storage wrapper — migration, decay math, summarizers |
-| `grouper.ts` | Prompt builder, JSON parser, title matching, domain rules |
-| `llm.ts` | Provider-agnostic LLM client with token counting |
-| `background.ts` | Service worker — orchestration, drift detection, scheduled re-org |
-| `popup.ts/html` | Action popup — organize, pin, correct, reject, merge/split |
-| `options.ts/html` | Settings — providers, learning toggles, schedules, pinned groups |
-
----
-
-## Settings
-
-### Behavior
-- **Max Groups** (2–15) — limit the number of groups AI creates
-- **Auto-organize Threshold** (2–25) — trigger when ungrouped tabs exceed this
-- **Title Truncation** (20–200) — max tab title chars sent to the LLM
-- **Stale Tab Age** (1–168h) — threshold for purging inactive tabs
-- **Auto-organize** — silently group when threshold met
-- **Protect Existing Groups** — only organize ungrouped tabs
-- **Zero-LLM Fast Routing** — route new tabs via affinity, no API calls
-- **Auto-pin Web Apps** — pin Gmail, Calendar, Jira, Spotify to the left
-
-### Smart Learning
-- **Correction Tracking** — learn from your edits before applying (on by default)
-- **Rejection Memory** — remember removed groups and avoid them (on by default)
-- **Group Drift Detection** — warn when groups become incoherent
-- **Pattern Mining** — discover co-occurring domains from history
-- **Drift Threshold** (20–80%) — coherence below which a group is flagged
-
-### Scheduled Re-org
-- **Schedule** — Off / Daily / Weekly
-- **Time of Day** (0–23) — hour when scheduled re-org runs
-
-### Pinned Groups
-- Groups marked as pinned survive all re-organization
-- Pin from popup (pin icon on each suggestion card) or settings page
-
----
-
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+Shift+G` / `Ctrl+Shift+G` | Organize all tabs |
-| `Cmd+Shift+Z` / `Ctrl+Shift+Z` | Undo last grouping |
-
----
-
-## Development
-
-```bash
-npm install          # install dev deps
-npm test             # run 394 tests
-npm run test:watch   # watch mode
-npm run build        # build -> dist/
-npm run dev          # watch + rebuild on change
-```
-
----
-
-## Chrome Web Store Submission
-
-### HTTP localhost permission justification
-
-`manifest.json` declares `http://localhost:11434/*` in `host_permissions`. Chrome Web Store policy requires a written justification for plain-HTTP host permissions. Use the following text when submitting:
-
-> "The extension optionally connects to a locally running Ollama instance (http://localhost:11434) for private, on-device LLM inference. This is the only non-HTTPS endpoint and is entirely user-configured. No data leaves the user's machine when this provider is selected."
-
-### Pre-submission checklist
-
-- [ ] HTTP localhost justification included in store listing (see above)
-- [ ] `"windows"` permission added to `manifest.json` (required for `chrome.windows.getCurrent()` — see `reports/mv3-audit.md`)
-- [ ] Store screenshots match current UI
-- [ ] Version bumped in `manifest.json` and `package.json`
-
----
-
-## Contributing
-
-PRs welcome. Run `npm test` before submitting. Zero runtime dependencies — keep it that way.
-
-## License
-
-MIT
+The UI uses bundled Phosphor SVG icons; their license is in `icons/ui/LICENSE`. No remote fonts or runtime UI dependencies are required. See [PRIVACY.md](PRIVACY.md) for data handling and [CHANGELOG.md](CHANGELOG.md) for release changes.

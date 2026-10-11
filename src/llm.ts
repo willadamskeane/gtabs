@@ -1,4 +1,4 @@
-import type { LLMConfig, MODEL_PRICING } from './types';
+import type { LLMConfig } from './types';
 
 export interface Message {
   role: 'system' | 'user' | 'assistant';
@@ -26,7 +26,7 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = LLM_
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { ...init, signal: controller.signal });
+    const res = await fetch(url, { ...init, redirect: 'error', signal: controller.signal });
     return res;
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
@@ -111,8 +111,7 @@ async function completeOpenAI(config: LLMConfig, messages: Message[]): Promise<C
     body: JSON.stringify({
       model: config.model,
       messages,
-      temperature: 0.2,
-      max_tokens: MAX_TOKENS,
+      ...(config.provider === 'openai' ? { max_completion_tokens: MAX_TOKENS } : { temperature: 0.2, max_tokens: MAX_TOKENS }),
     }),
   });
 
@@ -130,11 +129,11 @@ async function completeOpenAI(config: LLMConfig, messages: Message[]): Promise<C
 }
 
 function isAnthropic(baseUrl: string): boolean {
-  return baseUrl.includes('anthropic.com');
+  try { return new URL(baseUrl).hostname === 'api.anthropic.com'; } catch { return false; }
 }
 
 function isChromeAI(config: LLMConfig): boolean {
-  return !config.baseUrl && config.model === 'gemini-nano';
+  return !config.baseUrl && (config.provider === 'chrome-ai' || config.model === 'gemini-nano');
 }
 
 export async function complete(config: LLMConfig, messages: Message[]): Promise<string> {
@@ -144,7 +143,11 @@ export async function complete(config: LLMConfig, messages: Message[]): Promise<
 
 export async function completeWithUsage(config: LLMConfig, messages: Message[]): Promise<CompletionResult> {
   if (isChromeAI(config)) return completeChromeAI(messages);
-  if (isAnthropic(config.baseUrl)) return completeAnthropic(config, messages);
+  if (config.provider === 'openrouter-free' && (!config.modelPricing || config.modelPricing.some(price => price !== 0))) {
+    throw new Error('Refresh the free model catalog and choose a model with zero reported token prices.');
+  }
+  if (!config.model.trim()) throw new Error('Choose a model in Settings before organizing.');
+  if (config.provider === 'anthropic' || isAnthropic(config.baseUrl)) return completeAnthropic(config, messages);
   return completeOpenAI(config, messages);
 }
 

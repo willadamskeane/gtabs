@@ -1,17 +1,20 @@
 {
   "name": "gtabs",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "package": "rm -f gtabs-extension.zip && cd dist && (xattr -cr . 2>/dev/null || true) && zip -rX ../gtabs-extension.zip . -x '*.map' && cd .. && echo 'Packaged → gtabs-extension.zip'",
+    "package": "node package.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "dev": "node build.mjs --watch"
+    "dev": "node preview.mjs",
+    "typecheck": "tsc --noEmit",
+    "watch": "node build.mjs --watch"
   },
   "devDependencies": {
-    "@types/chrome": "^0.1.38",
+    "@phosphor-icons/core": "^2.1.1",
+    "@types/chrome": "^0.3.5",
     "@vitest/coverage-v8": "^2.1.0",
     "esbuild": "^0.24.0",
     "jsdom": "^29.0.1",

@@ -1,4 +1,5 @@
-import type { Settings, DomainRule, Color, ProviderPreset } from './types';
+import type { Settings, DomainRule, Color, ProviderPreset, MessageType, WorkspaceMap } from './types';
+import { discoverModels, type ModelInfo } from './models';
 import { DEFAULT_SETTINGS, PROVIDERS, COLORS } from './types';
 import { getSettings, saveSettings, getDomainRules, saveDomainRules } from './storage';
 
@@ -8,7 +9,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 document.querySelectorAll<HTMLButtonElement>('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const tab = btn.dataset.tab!;
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.tab-btn').forEach(b => { b.classList.toggle('active', b === btn); b.setAttribute('aria-pressed', String(b === btn)); });
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', (p as HTMLElement).dataset.tab === tab));
     try { localStorage.setItem('gtabs-settings-tab', tab); } catch { /* ignore */ }
   });
@@ -22,7 +23,21 @@ try {
 const providerGrid = $<HTMLDivElement>('provider-grid');
 const keyRow = $<HTMLDivElement>('key-row');
 const inApiKey = $<HTMLInputElement>('apiKey');
-const modelSelect = $<HTMLSelectElement>('model-select');
+const modelSelect = $<HTMLInputElement>('model-select');
+const inBaseUrl = $<HTMLInputElement>('base-url');
+const modelCatalog = $<HTMLDataListElement>('model-catalog');
+const modelStatus = $('model-status');
+const pricingStatus = $('pricing-status');
+const refreshModelsBtn = $<HTMLButtonElement>('refresh-models');
+type ProviderProfile = { baseUrl: string; apiKey: string; model: string; modelPricing?: [number, number] };
+let profiles: Record<string, ProviderProfile> = {};
+let catalog: ModelInfo[] = [];
+let discoveryEpoch = 0;
+let discoveryController: AbortController | undefined;
+let trustedOrigin = '';
+let initialized = false;
+let saveChain: Promise<void> = Promise.resolve();
+
 const testBtn = $<HTMLButtonElement>('test-btn');
 const signupLink = $<HTMLAnchorElement>('signup-link');
 const testResult = $<HTMLSpanElement>('test-result');
@@ -71,7 +86,7 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function sendMsg(msg: Record<string, unknown>): Promise<Record<string, unknown> | undefined> {
+function sendMsg(msg: Record<string, unknown>): Promise<(Extract<MessageType, { type: 'status' }> & { available?: boolean; workspaces?: WorkspaceMap }) | undefined> {
   return new Promise(resolve => chrome.runtime.sendMessage(msg, resolve));
 }
 
@@ -88,111 +103,170 @@ async function checkChromeAI(): Promise<boolean> {
 
 function renderProviderCards(selectedId: string) {
   providerGrid.innerHTML = '';
-
   for (const p of PROVIDERS) {
-    const card = document.createElement('div');
+    const card = document.createElement('button');
+    card.type = 'button';
     card.className = 'provider-card' + (p.id === selectedId ? ' selected' : '');
-    if (p.isBuiltIn && !chromeAIAvailable) card.className += ' disabled';
-
-    let badge = '';
-    if (p.isBuiltIn) badge = `<div class="badge local">${chromeAIAvailable ? 'FREE' : 'N/A'}</div>`;
-    else if (p.canFetchModels) badge = '<div class="badge local">LOCAL</div>';
-    card.innerHTML = `<div class="name">${esc(p.name)}</div>${badge}`;
-    if (p.id === selectedId && p.helpText) {
-      card.innerHTML += `<div style="font-size:10px;color:#9aa0a6;margin-top:4px">${esc(p.helpText)}</div>`;
-    }
-
-    card.addEventListener('click', () => {
-      if (p.isBuiltIn && !chromeAIAvailable) { showChromeAISetup(); return; }
-      hideChromeAISetup();
-      selectProvider(p);
-    });
+    card.setAttribute('aria-pressed', String(p.id === selectedId));
+    const badge = p.isBuiltIn ? 'ON DEVICE' : p.id === 'ollama' ? 'LOCAL' : p.id === 'custom' ? 'YOUR SERVER' : '';
+    card.innerHTML = `<span class="name">${esc(p.name)}</span>${badge ? `<span class="badge">${badge}</span>` : ''}`;
+    card.addEventListener('click', () => selectProvider(p));
     providerGrid.appendChild(card);
   }
 }
 
-function showChromeAISetup() {
-  document.getElementById('chrome-ai-setup')?.classList.remove('hidden');
+function showChromeAISetup() { $('chrome-ai-setup').classList.remove('hidden'); }
+function hideChromeAISetup() { $('chrome-ai-setup').classList.add('hidden'); }
+function originOf(url: string): string { try { return new URL(url).origin; } catch { return ''; } }
+
+function rememberProfile() {
+  if (!currentProvider) return;
+  profiles[currentProvider.id] = {
+    baseUrl: inBaseUrl.value.trim(), apiKey: inApiKey.value.trim(), model: modelSelect.value.trim(),
+    modelPricing: selectedPricing(),
+  };
 }
 
-function hideChromeAISetup() {
-  document.getElementById('chrome-ai-setup')?.classList.add('hidden');
+function configureProviderUI(p: ProviderPreset) {
+  renderProviderCards(p.id);
+  keyRow.classList.toggle('hidden', !p.needsKey);
+  $('endpoint-row').hidden = Boolean(p.isBuiltIn);
+  $('model-row').hidden = Boolean(p.isBuiltIn);
+  inBaseUrl.readOnly = !['custom', 'ollama'].includes(p.id);
+  $('provider-description').textContent = p.helpText || '';
+  signupLink.hidden = !p.signupUrl;
+  if (p.signupUrl) signupLink.href = p.signupUrl;
+  if (p.isBuiltIn && !chromeAIAvailable) showChromeAISetup(); else hideChromeAISetup();
 }
 
 function selectProvider(p: ProviderPreset) {
+  if (saveDebounceTimer !== undefined) window.clearTimeout(saveDebounceTimer);
+  rememberProfile();
+  discoveryController?.abort();
+  discoveryEpoch++;
   currentProvider = p;
-
-  // Update UI
-  renderProviderCards(p.id);
-
-  // Show/hide key row + signup link
-  keyRow.classList.toggle('hidden', !p.needsKey);
-  if (p.signupUrl) {
-    signupLink.href = p.signupUrl;
-    signupLink.hidden = false;
-  } else {
-    signupLink.hidden = true;
-  }
-
-  // Populate models
-  populateModels(p.models);
-
-  // Ollama: fetch models dynamically
-  if (p.canFetchModels) {
-    fetchOllamaModels();
-  }
-
-  save();
+  const profile = profiles[p.id] || { baseUrl: p.baseUrl, apiKey: '', model: '' };
+  inBaseUrl.value = profile.baseUrl;
+  trustedOrigin = originOf(profile.baseUrl);
+  inApiKey.value = profile.apiKey;
+  modelSelect.value = profile.model;
+  catalog = [];
+  refreshModelsBtn.disabled = false;
+  modelCatalog.innerHTML = '';
+  configureProviderUI(p);
+  modelStatus.textContent = 'Models come from your provider. Enter an ID or refresh the catalog.';
+  updatePricingLabel();
+  void save();
+  void refreshCatalog(false);
 }
 
-function populateModels(models: string[]) {
-  modelSelect.innerHTML = '';
-  if (!models.length) {
-    modelSelect.innerHTML = '<option value="">No models available</option>';
-    return;
-  }
-  for (const m of models) {
-    const opt = document.createElement('option');
-    opt.value = m;
-    opt.textContent = m;
-    modelSelect.appendChild(opt);
-  }
+function selectedPricing(): [number, number] | undefined {
+  const pricing = catalog.find(m => m.id === modelSelect.value.trim())?.pricing;
+  return pricing ? [pricing.input * 1_000_000, pricing.output * 1_000_000] : undefined;
 }
 
-// No longer auto-populating select, using range slider now.
+function updatePricingLabel() {
+  const pricing = selectedPricing();
+  pricingStatus.textContent = pricing
+    ? `Provider-reported price per million tokens: $${pricing[0]} input · $${pricing[1]} output. Estimates may differ from your bill.`
+    : currentProvider?.id === 'ollama' ? 'Local inference. No provider token charges; your hardware and electricity still have a cost.'
+    : 'Pricing unavailable. Token usage is tracked; unknown costs are not reported as free.';
+}
 
-async function fetchOllamaModels() {
-  const origText = modelSelect.innerHTML;
-  modelSelect.innerHTML = '<option>Loading models...</option>';
+async function refreshCatalog(requestAccess: boolean) {
+  const p = currentProvider;
+  if (!p || p.isBuiltIn) return;
+  discoveryController?.abort();
+  const controller = new AbortController();
+  discoveryController = controller;
+  const epoch = ++discoveryEpoch;
+  const config = { baseUrl: inBaseUrl.value.trim(), apiKey: inApiKey.value.trim(), model: modelSelect.value.trim() };
+  const isCurrent = () => epoch === discoveryEpoch && currentProvider?.id === p.id
+    && inBaseUrl.value.trim() === config.baseUrl && inApiKey.value.trim() === config.apiKey;
   try {
-    const res = await sendMsg({ type: 'fetch-ollama-models' });
-    if (res?.models?.length) {
-      populateModels(res.models);
-    } else {
-      modelSelect.innerHTML = '<option value="">Ollama not running</option>';
+    if (!config.baseUrl) throw new Error('Enter your API endpoint, then refresh models.');
+    const url = new URL(config.baseUrl);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Enter an HTTP or HTTPS API endpoint without URL credentials.');
+    if (p.needsKey && p.id !== 'custom' && !config.apiKey) throw new Error('Add your API key, then refresh models.');
+    const origins = [`${url.origin}/*`];
+    // Request directly within the Refresh button gesture, before any await.
+    const granted = requestAccess
+      ? await chrome.permissions.request({ origins })
+      : await chrome.permissions.contains({ origins });
+    if (!isCurrent()) return;
+    if (!granted) throw new Error('Click Refresh models to grant access to this endpoint.');
+    refreshModelsBtn.disabled = true;
+    modelStatus.textContent = 'Fetching the latest models…';
+    const models = await discoverModels(p.id, config, controller.signal);
+    if (!isCurrent()) return;
+    catalog = models;
+    modelCatalog.innerHTML = '';
+    for (const model of models) {
+      const option = document.createElement('option');
+      option.value = model.id;
+      option.label = model.name;
+      modelCatalog.appendChild(option);
     }
-  } catch {
-    modelSelect.innerHTML = '<option value="">Connection failed</option>';
+    const listed = models.some(m => m.id === modelSelect.value.trim());
+    modelStatus.textContent = models.length
+      ? `${models.length} models fetched just now.${modelSelect.value && !listed ? ' Your saved model is not listed; its ID has been kept.' : ' Choose a chat-capable model or enter an ID.'}`
+      : 'No models listed. Your selected ID is preserved; you can enter an ID manually.';
+    updatePricingLabel();
+    // Preserve the current input, including edits made while discovery was running.
+    if (initialized) void save();
+  } catch (error) {
+    if (!isCurrent() || controller.signal.aborted) return;
+    modelStatus.textContent = error instanceof Error ? error.message : 'Model discovery failed. Enter an ID manually.';
+    updatePricingLabel();
+  } finally {
+    if (epoch === discoveryEpoch) refreshModelsBtn.disabled = false;
   }
 }
+
+refreshModelsBtn.addEventListener('click', () => { void refreshCatalog(true); });
+modelSelect.addEventListener('input', () => {
+  if (catalog.length) modelStatus.textContent = `${catalog.length} models fetched. Choose a chat-capable model or enter an ID.`;
+  updatePricingLabel();
+});
+for (const input of [inApiKey, inBaseUrl]) input.addEventListener('input', () => {
+  discoveryController?.abort();
+  discoveryEpoch++;
+  refreshModelsBtn.disabled = false;
+  catalog = [];
+  modelCatalog.innerHTML = '';
+  modelStatus.textContent = 'Connection changed. Refresh to load models for this connection.';
+  updatePricingLabel();
+});
+inBaseUrl.addEventListener('change', () => {
+  const origin = originOf(inBaseUrl.value);
+  if (trustedOrigin && origin !== trustedOrigin) {
+    inApiKey.value = '';
+    modelStatus.textContent = 'Endpoint changed. API key cleared; add a key for this endpoint if needed.';
+  }
+  trustedOrigin = origin;
+  void save();
+});
 
 // --- Save ---
 
-async function save() {
+function save(): Promise<void> {
   const p = currentProvider;
-  if (!p) return;
+  if (!p) return Promise.resolve();
 
-  const model = modelSelect.value;
-  const baseUrl = p.baseUrl;
-
-  // Preserve pinnedGroups from current settings (managed separately)
-  const current = await getSettings();
+  if (saveDebounceTimer !== undefined) { window.clearTimeout(saveDebounceTimer); saveDebounceTimer = undefined; }
+  const model = p.isBuiltIn ? '' : modelSelect.value.trim();
+  const baseUrl = p.isBuiltIn ? '' : inBaseUrl.value.trim();
+  const apiKey = inApiKey.value.trim();
+  const modelPricing = selectedPricing();
+  rememberProfile();
+  const profileSnapshot = structuredClone(profiles);
 
   const settings: Settings = {
     provider: p.id,
     baseUrl,
-    apiKey: inApiKey.value.trim(),
+    apiKey,
     model,
+    modelPricing,
     maxGroups: Number(inMaxGroups.value) || DEFAULT_SETTINGS.maxGroups,
     maxTitleLength: Number(inMaxTitleLength.value) || DEFAULT_SETTINGS.maxTitleLength,
     autoTrigger: inAutoTrigger.checked,
@@ -208,12 +282,20 @@ async function save() {
     groupDriftThreshold: Number(inGroupDriftThreshold.value) || DEFAULT_SETTINGS.groupDriftThreshold,
     reorgSchedule: inReorgSchedule.value as Settings['reorgSchedule'],
     reorgTime: Number(inReorgTime.value),
-    pinnedGroups: current.pinnedGroups || [],
+    pinnedGroups: [],
     smartUngroup: inSmartUngroup.checked,
-    spendingCapUSD: current.spendingCapUSD ?? DEFAULT_SETTINGS.spendingCapUSD,
+    spendingCapUSD: Number(inSpendingCapUSD.value) || 0,
   };
   settings.spendingCapUSD = Number(inSpendingCapUSD.value) ?? 0;
-  await saveSettings(settings);
+  $('save-status').textContent = 'Saving…';
+  saveChain = saveChain.catch(() => {}).then(async () => {
+    const current = await getSettings();
+    settings.pinnedGroups = current.pinnedGroups || [];
+    await saveSettings(settings);
+    await chrome.storage.local.set({ providerProfiles: profileSnapshot });
+  });
+  return saveChain.then(() => { $('save-status').textContent = 'Saved automatically'; }, () => { $('save-status').textContent = 'Could not save. Please try again.'; });
+
 }
 
 let saveDebounceTimer: number | undefined;
@@ -228,27 +310,22 @@ async function load() {
   chromeAIAvailable = await checkChromeAI();
   const s = await getSettings();
 
-  // Find provider
-  const p = PROVIDERS.find(provider => provider.id === s.provider)
-    || PROVIDERS.find(provider => provider.id === DEFAULT_SETTINGS.provider)
-    || PROVIDERS[0];
+  const profileData = await chrome.storage.local.get({ providerProfiles: {} });
+  const storedProfiles = profileData.providerProfiles;
+  profiles = storedProfiles && typeof storedProfiles === 'object' && !Array.isArray(storedProfiles)
+    ? Object.fromEntries(Object.entries(storedProfiles).filter(([, value]) => value && typeof value === 'object'
+      && typeof (value as ProviderProfile).baseUrl === 'string' && typeof (value as ProviderProfile).apiKey === 'string' && typeof (value as ProviderProfile).model === 'string')) as Record<string, ProviderProfile>
+    : {};
+  const p = PROVIDERS.find(provider => provider.id === s.provider) || PROVIDERS[0];
   currentProvider = p;
-
-  renderProviderCards(p.id);
-  if (p.isBuiltIn && !chromeAIAvailable) showChromeAISetup();
-  keyRow.classList.toggle('hidden', !p.needsKey);
-
-  inApiKey.value = s.apiKey;
-
-  // Models
-  if (p.canFetchModels) {
-    await fetchOllamaModels();
-  } else {
-    populateModels(p.models);
-  }
-
-  // Select current model
-  modelSelect.value = s.model;
+  // Migrate the current connection into its own device-local provider profile.
+  profiles[p.id] = { baseUrl: s.baseUrl, apiKey: s.apiKey, model: s.model, modelPricing: s.modelPricing };
+  const profile = profiles[p.id];
+  inApiKey.value = profile.apiKey;
+  inBaseUrl.value = profile.baseUrl;
+  trustedOrigin = originOf(profile.baseUrl);
+  modelSelect.value = p.isBuiltIn ? '' : profile.model;
+  configureProviderUI(p);
 
   // Behavior
   inMaxGroups.value = String(s.maxGroups);
@@ -291,6 +368,8 @@ async function load() {
   // Domain rules
   await renderDomainRules();
 
+  initialized = true;
+  await refreshCatalog(false);
   // Stats & costs
   await refreshData();
 }
@@ -318,8 +397,16 @@ testBtn.addEventListener('click', async () => {
 
 // --- Domain Rules ---
 
-async function renderDomainRules() {
-  const rules = await getDomainRules();
+function readDraftRules(): DomainRule[] {
+  return Array.from(rulesContainer.querySelectorAll('.rule-row')).map(row => ({
+    domain: (row.querySelector('.rule-domain') as HTMLInputElement).value.trim().toLowerCase(),
+    groupName: (row.querySelector('.rule-group') as HTMLInputElement).value.trim(),
+    color: (row.querySelector('.rule-color') as HTMLSelectElement).value as Color,
+  }));
+}
+
+async function renderDomainRules(draft?: DomainRule[]) {
+  const rules = draft ?? await getDomainRules();
   rulesContainer.innerHTML = '';
 
   for (let i = 0; i < rules.length; i++) {
@@ -327,12 +414,12 @@ async function renderDomainRules() {
     const row = document.createElement('div');
     row.className = 'rule-row';
     row.innerHTML = `
-      <input type="text" value="${esc(r.domain)}" placeholder="domain.com or *.example.com" data-i="${i}" class="rule-domain" />
-      <input type="text" value="${esc(r.groupName)}" placeholder="Group Name" data-i="${i}" class="rule-group" style="max-width:120px" />
-      <select data-i="${i}" class="rule-color">
+      <input type="text" value="${esc(r.domain)}" placeholder="domain.com or *.example.com" data-i="${i}" class="rule-domain" aria-label="Rule domain" />
+      <input type="text" value="${esc(r.groupName)}" placeholder="Group Name" data-i="${i}" class="rule-group" aria-label="Rule group name"  />
+      <select data-i="${i}" class="rule-color" aria-label="Rule group color">
         ${COLORS.map(c => `<option value="${c}" ${c === r.color ? 'selected' : ''}>${c}</option>`).join('')}
       </select>
-      <button class="btn-ghost btn-sm rule-delete" data-i="${i}">&times;</button>`;
+      <button class="btn-ghost btn-sm rule-delete" aria-label="Delete rule" data-i="${i}"><img src="icons/ui/x.svg" alt=""></button>`;
     rulesContainer.appendChild(row);
   }
 
@@ -352,18 +439,17 @@ async function renderDomainRules() {
     el.addEventListener('change', saveRules));
   rulesContainer.querySelectorAll('.rule-delete').forEach(el =>
     el.addEventListener('click', async () => {
-      const rules = await getDomainRules();
+      const rules = readDraftRules();
       rules.splice(Number((el as HTMLElement).dataset.i), 1);
       await saveDomainRules(rules);
-      renderDomainRules();
+      await renderDomainRules(rules);
     }));
 }
 
-btnAddRule.addEventListener('click', async () => {
-  const rules = await getDomainRules();
+btnAddRule.addEventListener('click', () => {
+  const rules = readDraftRules();
   rules.push({ domain: '', groupName: '', color: 'grey' });
-  await saveDomainRules(rules);
-  renderDomainRules();
+  void renderDomainRules(rules);
 });
 
 btnExportRulesCSV.addEventListener('click', async () => {
@@ -426,7 +512,8 @@ async function refreshData() {
 
   if (costsRes?.costs) {
     const c = costsRes.costs;
-    const providers = Object.entries(c.byProvider);
+    const providers = Object.entries(c.byProvider || {});
+    if (c.unpricedCalls) statsLine.append(document.createTextNode(` · ${c.unpricedCalls} calls with unknown pricing`));
     if (providers.length) {
       costTable.hidden = false;
       costBody.innerHTML = '';
@@ -475,7 +562,7 @@ function renderPinnedGroups(pinnedGroups: string[]) {
     row.className = 'rule-row';
     row.innerHTML = `
       <input type="text" value="${esc(pinnedGroups[i])}" readonly style="flex:1;opacity:0.8" />
-      <button class="btn-ghost btn-sm pinned-delete" data-i="${i}">&times;</button>`;
+      <button class="btn-ghost btn-sm pinned-delete" data-i="${i}"><img src="icons/ui/x.svg" alt=""></button>`;
     pinnedContainer.appendChild(row);
   }
 
@@ -516,7 +603,7 @@ for (const b of rangeBindings) {
 }
 
 const autoSaveElements = [
-  inApiKey, modelSelect, inMaxGroups, inMaxTitleLength, inAutoTrigger, inThreshold,
+  inApiKey, inBaseUrl, modelSelect, inMaxGroups, inMaxTitleLength, inAutoTrigger, inThreshold,
   inMergeMode, inSilentAutoAdd, inAutoPinApps, inSmartUngroup, inStaleTabThresholdHours,
   inSpendingCapUSD,
   inEnableCorrectionTracking, inEnableRejectionMemory, inEnableGroupDrift,
@@ -584,7 +671,7 @@ $<HTMLButtonElement>('tool-export-md').addEventListener('click', async () => {
   const res = await sendMsg({ type: 'export-markdown' });
   if (res?.error) { setToolStatus(res.error, true); return; }
   try {
-    await navigator.clipboard.writeText(res.markdown || '');
+    await navigator.clipboard.writeText(res?.markdown || '');
     setToolStatus('Markdown copied to clipboard!');
   } catch {
     setToolStatus('Clipboard access denied', true);

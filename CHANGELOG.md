@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0] - 2026-10-11
+### Added
+- Quiet Workspace redesign: restrained green accents, accessible labels and focus states, responsive settings, and a scrollable review list with persistent Apply/Cancel controls.
+- Provider-owned model discovery, Anthropic pagination, Ollama tags, manual IDs, and preservation of unavailable saved IDs.
+- Connection profiles isolated by provider; optional access grants for custom endpoints.
+- Live OpenRouter pricing and free-tier filtering. Unknown prices stay unknown; spend caps block unpriced calls.
+- A browser preview with simulated data and a reproducible installable ZIP.
+
+### Fixed
+- Review exclusions, rename corrections after successful application, failure recovery, and draft domain-rule creation.
+- Context-menu tab handling and TypeScript compatibility.
+
 ## [0.5.1] - 2026-05-17
 ### Fixed
 - Rebuild context menus with a full `removeAll()` pass so stale child IDs cannot break service worker startup.

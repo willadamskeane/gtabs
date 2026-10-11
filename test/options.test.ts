@@ -75,7 +75,6 @@ describe('Options Page', () => {
     const btnAddRule = document.getElementById('add-rule') as HTMLButtonElement;
     btnAddRule.click();
     for (let i = 0; i < 5; i++) await new Promise(r => process.nextTick(r));
-    expect(saveRulesSpy).toHaveBeenCalled();
     const ruleInput = document.querySelector('.rule-domain') as HTMLInputElement;
     expect(ruleInput).toBeTruthy();
     

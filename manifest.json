@@ -1,9 +1,17 @@
 {
   "manifest_version": 3,
-  "name": "gTabs - AI Tab Organizer",
-  "version": "0.5.1",
+  "name": "gTabs \u2014 Quiet Workspace",
+  "version": "0.6.0",
   "description": "One-click AI tab organizer with editable suggestions, undo, and local or cloud LLM support",
-  "permissions": ["tabs", "tabGroups", "storage", "alarms", "contextMenus", "windows"],
+  "permissions": [
+    "tabs",
+    "tabGroups",
+    "storage",
+    "alarms",
+    "contextMenus",
+    "windows",
+    "favicon"
+  ],
   "host_permissions": [
     "https://api.openai.com/*",
     "https://api.anthropic.com/*",
@@ -25,11 +33,17 @@
   },
   "commands": {
     "organize-tabs": {
-      "suggested_key": { "default": "Ctrl+Shift+G", "mac": "Command+Shift+G" },
+      "suggested_key": {
+        "default": "Ctrl+Shift+G",
+        "mac": "Command+Shift+G"
+      },
       "description": "Organize tabs into groups"
     },
     "undo-grouping": {
-      "suggested_key": { "default": "Ctrl+Shift+Z", "mac": "Command+Shift+Z" },
+      "suggested_key": {
+        "default": "Ctrl+Shift+Z",
+        "mac": "Command+Shift+Z"
+      },
       "description": "Undo last tab grouping"
     }
   },
@@ -39,5 +53,10 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "incognito": "split"
+  "incognito": "split",
+  "minimum_chrome_version": "120",
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ]
 }

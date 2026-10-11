@@ -11,56 +11,23 @@ export interface ProviderPreset {
   id: string;
   name: string;
   baseUrl: string;
-  models: string[];
   needsKey: boolean;
-  canFetchModels?: boolean;
   isBuiltIn?: boolean;
   signupUrl?: string;
   helpText?: string;
 }
 
+// Endpoint presets only. Model catalogs belong to providers, not this extension.
 export const PROVIDERS: ProviderPreset[] = [
-  { id: 'chrome-ai', name: 'Chrome Built-in AI', baseUrl: '', models: ['gemini-nano'], needsKey: false, isBuiltIn: true, helpText: 'Free. Runs on-device in Chrome. Two flags to enable — click for setup guide.' },
-  { id: 'openrouter-free', name: 'OpenRouter (Free)', baseUrl: 'https://openrouter.ai/api/v1', signupUrl: 'https://openrouter.ai/keys', helpText: 'Free, no credit card. Sign up \u2192 copy key.', models: [
-    'openrouter/free',
-    'google/gemini-2.5-flash',
-    'google/gemini-2.5-flash-lite',
-    'deepseek/deepseek-v3.2-20251201',
-    'openai/gpt-oss-120b',
-    'xiaomi/mimo-v2-pro-20260318',
-  ], needsKey: true },
-  { id: 'groq', name: 'Groq (Free)', baseUrl: 'https://api.groq.com/openai/v1', signupUrl: 'https://console.groq.com/keys', helpText: 'Free, no credit card. Fastest inference.', models: [
-    'llama-3.3-70b-versatile',
-    'meta-llama/llama-4-scout-17b-16e-instruct',
-    'qwen/qwen3-32b',
-    'openai/gpt-oss-120b',
-  ], needsKey: true },
-  { id: 'grok', name: 'Grok (xAI)', baseUrl: 'https://api.x.ai/v1', signupUrl: 'https://console.x.ai', helpText: '$25 free credit on signup + $150/mo via data sharing.', models: [
-    'grok-4-1-fast-non-reasoning',
-    'grok-4-1-fast-reasoning',
-    'grok-4.20-0309-non-reasoning',
-    'grok-4.20-0309-reasoning',
-  ], needsKey: true },
-  { id: 'anthropic', name: 'Anthropic', baseUrl: 'https://api.anthropic.com', signupUrl: 'https://console.anthropic.com/settings/keys', helpText: 'Paid. $5 free credit on signup.', models: [
-    'claude-sonnet-4-6',
-    'claude-opus-4-6',
-    'claude-haiku-4-5',
-  ], needsKey: true },
-  { id: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', signupUrl: 'https://platform.openai.com/api-keys', helpText: 'Paid. Usage-based pricing.', models: [
-    'gpt-5.4',
-    'gpt-5.4-mini',
-    'gpt-5.4-nano',
-    'gpt-4.1',
-    'gpt-4.1-mini',
-  ], needsKey: true },
-  { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', signupUrl: 'https://openrouter.ai/keys', helpText: 'Access 300+ models. Pay per token.', models: [
-    'anthropic/claude-4.6-sonnet-20260217',
-    'anthropic/claude-4.6-opus-20260205',
-    'openai/gpt-5-mini-2025-08-07',
-    'google/gemini-2.5-flash',
-    'deepseek/deepseek-v3.2-20251201',
-  ], needsKey: true },
-  { id: 'ollama', name: 'Ollama (Local)', baseUrl: 'http://localhost:11434/v1', models: [], needsKey: false, canFetchModels: true, signupUrl: 'https://ollama.com/download', helpText: 'Run models locally. Install Ollama first.' },
+  { id: 'chrome-ai', name: 'Chrome AI', baseUrl: '', needsKey: false, isBuiltIn: true, helpText: 'Runs on this device. Chrome manages the model.' },
+  { id: 'openrouter-free', name: 'OpenRouter · free', baseUrl: 'https://openrouter.ai/api/v1', needsKey: true, signupUrl: 'https://openrouter.ai/keys', helpText: 'Only models currently reporting zero input and output prices.' },
+  { id: 'groq', name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', needsKey: true, signupUrl: 'https://console.groq.com/keys', helpText: 'Choose from the models available to your account.' },
+  { id: 'grok', name: 'xAI', baseUrl: 'https://api.x.ai/v1', needsKey: true, signupUrl: 'https://console.x.ai', helpText: 'Choose from the models available to your account.' },
+  { id: 'anthropic', name: 'Anthropic', baseUrl: 'https://api.anthropic.com', needsKey: true, signupUrl: 'https://console.anthropic.com/settings/keys', helpText: 'Choose from your current Claude model catalog.' },
+  { id: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', needsKey: true, signupUrl: 'https://platform.openai.com/api-keys', helpText: 'Choose a chat-capable model from your account.' },
+  { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', needsKey: true, signupUrl: 'https://openrouter.ai/keys', helpText: 'Live model catalog and pricing from OpenRouter.' },
+  { id: 'custom', name: 'Custom endpoint', baseUrl: '', needsKey: true, helpText: 'Connect an OpenAI-compatible server, including a local workstation. API key is optional.' },
+  { id: 'ollama', name: 'Ollama (Local)', baseUrl: 'http://localhost:11434/v1', needsKey: false, signupUrl: 'https://ollama.com/download', helpText: 'Choose from the models installed on your Ollama server.' },
 ];
 
 // --- Tab & Group ---
@@ -86,6 +53,9 @@ export interface GroupSuggestion {
 // --- Settings ---
 
 export interface LLMConfig {
+  provider?: string;
+  /** Per million tokens; unknown unless supplied by a live catalog. */
+  modelPricing?: [number, number];
   baseUrl: string;
   apiKey: string;
   model: string;
@@ -205,30 +175,13 @@ export interface HistoryEntry {
 // --- Costs ---
 
 export interface CostTotals {
+  unpricedCalls?: number;
   totalInputTokens: number;
   totalOutputTokens: number;
   totalCost: number;
   sessionCost: number;
   byProvider: Record<string, { inputTokens: number; outputTokens: number; cost: number }>;
 }
-
-export const MODEL_PRICING: Record<string, [number, number]> = {
-  'claude-opus-4-6': [5, 25],
-  'claude-sonnet-4-6': [3, 15],
-  'claude-haiku-4-5': [1, 5],
-  'gpt-5.4': [5, 20],
-  'gpt-5.4-mini': [1.5, 6],
-  'gpt-5.4-nano': [0.3, 1.2],
-  'gpt-4.1': [2, 8],
-  'gpt-4.1-mini': [0.4, 1.6],
-  'grok-4-1-fast-non-reasoning': [0.2, 0.5],
-  'grok-4-1-fast-reasoning': [0.2, 0.5],
-  'grok-4.20-0309-non-reasoning': [2, 6],
-  'grok-4.20-0309-reasoning': [2, 6],
-  'llama-3.3-70b-versatile': [0.59, 0.79],
-  'gemini-nano': [0, 0],
-  'openrouter/free': [0, 0],
-};
 
 // --- Undo ---
 
@@ -264,7 +217,7 @@ export const DEFAULT_SETTINGS: Settings = {
   provider: 'chrome-ai',
   baseUrl: '',
   apiKey: '',
-  model: 'gemini-nano',
+  model: '',
   autoTrigger: false,
   threshold: 5,
   maxGroups: 6,

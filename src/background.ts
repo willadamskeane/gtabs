@@ -11,7 +11,7 @@ import type {
   RejectionEntry,
   SnoozedTab,
 } from './types';
-import { MODEL_PRICING, SECONDARY_TLDS } from './types';
+import { SECONDARY_TLDS } from './types';
 import {
   addCost,
   addCorrections,
@@ -119,7 +119,7 @@ export function isImportantAppUrl(url: string): boolean {
   );
 }
 
-export function isGroupedTab(tab: { groupId?: number | undefined }): tab is { groupId: number } {
+export function isGroupedTab(tab: { groupId?: number | undefined }): boolean {
   return tab.groupId !== undefined && tab.groupId !== -1;
 }
 
@@ -239,16 +239,16 @@ export async function restoreWorkspaceByName(name: string): Promise<void> {
   } catch { /* best-effort */ }
 }
 
-export function calculateCost(model: string, inputTokens: number, outputTokens: number): number {
-  const pricing = MODEL_PRICING[model];
-  if (!pricing) return 0;
-  return (inputTokens * pricing[0] + outputTokens * pricing[1]) / 1_000_000;
+export function calculateCost(_model: string, inputTokens: number, outputTokens: number, pricing?: [number, number]): number | null {
+  if (!inputTokens && !outputTokens) return 0;
+  if (!pricing) return null;
+  return (Math.max(0, inputTokens) * pricing[0] + Math.max(0, outputTokens) * pricing[1]) / 1_000_000;
 }
 
-async function recordModelUsage(inputTokens: number, outputTokens: number): Promise<void> {
+async function recordModelUsage(inputTokens: number, outputTokens: number, settings: import('./types').Settings): Promise<void> {
   if (inputTokens <= 0 && outputTokens <= 0) return;
-  const settings = await getSettings();
-  const cost = calculateCost(settings.model, inputTokens, outputTokens);
+  const pricing = settings.provider === 'chrome-ai' || settings.provider === 'ollama' ? [0, 0] as [number, number] : settings.modelPricing;
+  const cost = calculateCost(settings.model, inputTokens, outputTokens, pricing);
   await addCost(settings.provider, inputTokens, outputTokens, cost);
 }
 
@@ -266,7 +266,7 @@ export async function snapshotCurrentState(): Promise<UndoSnapshot> {
 
   for (const t of tabs) {
     if (t.id === undefined) continue;
-    if (isGroupedTab(t)) groups.push({ tabId: t.id, groupId: t.groupId });
+    if (isGroupedTab(t)) groups.push({ tabId: t.id, groupId: t.groupId! });
     else ungrouped.push(t.id);
   }
 
@@ -396,6 +396,9 @@ export async function organize(ungroupedOnly = false): Promise<{ suggestions?: G
 
     // Check spending cap before any LLM calls
     if (settings.spendingCapUSD > 0) {
+      if (!settings.modelPricing && !['chrome-ai', 'ollama'].includes(settings.provider)) {
+        return { error: 'This model has no live pricing. A spending cap cannot track it. Choose a priced model or turn off the cap.' };
+      }
       const costs = await getCosts();
       if (costs.totalCost >= settings.spendingCapUSD) {
         return { error: `Spending cap of $${settings.spendingCapUSD.toFixed(2)} reached. Increase or disable in Settings.` };
@@ -441,7 +444,7 @@ export async function organize(ungroupedOnly = false): Promise<{ suggestions?: G
       const colorPrefs = await getGroupColorPrefs();
       preMatched = Array.from(matched.entries()).map(([name, matchedTabs]) => ({
         name,
-        color: (colorPrefs[name] ?? 'grey') as const,
+        color: (colorPrefs[name] ?? 'grey'),
         tabs: matchedTabs,
       }));
       tabsForLLM = remaining;
@@ -463,7 +466,7 @@ export async function organize(ungroupedOnly = false): Promise<{ suggestions?: G
 
     const allSuggestions = [...preMatched, ...result.suggestions];
 
-    await recordModelUsage(result.inputTokens, result.outputTokens);
+    await recordModelUsage(result.inputTokens, result.outputTokens, settings);
     await saveSuggestions(allSuggestions);
     await chrome.action.setBadgeText({ text: String(allSuggestions.length) });
     await chrome.action.setBadgeBackgroundColor({ color: '#8ab4f8' });
@@ -1151,25 +1154,25 @@ chrome.runtime.onInstalled.addListener(() => {
   return rebuildContextMenus();
 });
 
-chrome.contextMenus?.onClicked?.addListener((info) => {
+chrome.contextMenus?.onClicked?.addListener((info, tab) => {
   if (info.menuItemId === 'gtabs-organize') void organize().catch(() => {});
   if (info.menuItemId === 'gtabs-organize-ungrouped') void organize(true).catch(() => {});
   if (info.menuItemId === 'gtabs-undo') void undoLastGrouping().catch(() => {});
   if (info.menuItemId === 'gtabs-duplicates') void findDuplicateTabs().catch(() => {});
 
   const menuId = String(info.menuItemId);
-  if (menuId === `${CTX_ADD_TO_GROUP_ID}-new` && info.tab?.id !== undefined) {
-    const tabId = info.tab.id;
+  if (menuId === `${CTX_ADD_TO_GROUP_ID}-new` && tab?.id !== undefined) {
+    const tabId = tab.id;
     (async () => {
       const newGroupId = await groupTabsSafe([tabId]);
       if (newGroupId === null) return;
       await chrome.tabGroups.update(newGroupId, { title: 'New Group', collapsed: false });
       await rebuildContextMenus();
     })();
-  } else if (menuId.startsWith(`${CTX_ADD_TO_GROUP_ID}-`) && info.tab?.id !== undefined) {
+  } else if (menuId.startsWith(`${CTX_ADD_TO_GROUP_ID}-`) && tab?.id !== undefined) {
     const groupId = Number(menuId.slice(CTX_ADD_TO_GROUP_ID.length + 1));
     if (Number.isInteger(groupId) && groupId > 0 && groupId < MAX_CONTEXT_GROUP_ID) {
-      void groupTabsSafe([info.tab.id], groupId);
+      void groupTabsSafe([tab.id], groupId);
     }
   }
 });

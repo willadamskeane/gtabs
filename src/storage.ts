@@ -70,6 +70,9 @@ function sanitizeSettings(input: Partial<Settings>): Settings {
     provider: typeof s.provider === 'string' ? s.provider : DEFAULT_SETTINGS.provider,
     baseUrl: typeof s.baseUrl === 'string' ? s.baseUrl : DEFAULT_SETTINGS.baseUrl,
     apiKey: typeof s.apiKey === 'string' ? s.apiKey.trim() : DEFAULT_SETTINGS.apiKey,
+    modelPricing: Array.isArray(s.modelPricing) && s.modelPricing.length === 2
+      && s.modelPricing.every(n => typeof n === 'number' && Number.isFinite(n) && n >= 0)
+      ? s.modelPricing : undefined,
     model: typeof s.model === 'string' ? s.model : DEFAULT_SETTINGS.model,
     autoTrigger: Boolean(s.autoTrigger),
     threshold: clampNumber(s.threshold, DEFAULT_SETTINGS.threshold, 0, 100),
@@ -151,7 +154,7 @@ export function computeDecayedWeight(count: number, lastUsed: number, now = Date
 
 async function migrateAffinity(): Promise<void> {
   const versionData = await chrome.storage.local.get({ [K.affinityVersion]: 0 });
-  if (versionData[K.affinityVersion] >= 2) return;
+  if (Number(versionData[K.affinityVersion]) >= 2) return;
 
   const oldData = await chrome.storage.local.get({ [K.affinity]: {} });
   const oldAffinity = oldData[K.affinity] as AffinityMap;
@@ -355,7 +358,7 @@ export async function saveUndoSnapshot(snapshot: UndoSnapshot | null): Promise<v
 
 export async function getStats(): Promise<Stats> {
   const data = await chrome.storage.local.get({ [K.stats]: DEFAULT_STATS });
-  return { ...DEFAULT_STATS, ...data[K.stats] };
+  return { ...DEFAULT_STATS, ...(data[K.stats] as Stats) };
 }
 
 export async function incrementStats(tabsGrouped: number): Promise<Stats> {
@@ -378,17 +381,19 @@ export async function getCosts(): Promise<CostTotals> {
   return { ...DEFAULT_COSTS, ...stored, sessionCost: runtimeSessionCost, byProvider: { ...stored.byProvider } };
 }
 
-export async function addCost(provider: string, inputTokens: number, outputTokens: number, cost: number): Promise<CostTotals> {
+export async function addCost(provider: string, inputTokens: number, outputTokens: number, cost: number | null): Promise<CostTotals> {
   const current = await getCosts();
   const bp = current.byProvider[provider] || { inputTokens: 0, outputTokens: 0, cost: 0 };
   current.totalInputTokens += inputTokens;
   current.totalOutputTokens += outputTokens;
-  current.totalCost += cost;
-  runtimeSessionCost += cost;
+  if (cost === null) current.unpricedCalls = (current.unpricedCalls ?? 0) + 1;
+  const pricedCost = cost ?? 0;
+  current.totalCost += pricedCost;
+  runtimeSessionCost += pricedCost;
   current.sessionCost = runtimeSessionCost;
   bp.inputTokens += inputTokens;
   bp.outputTokens += outputTokens;
-  bp.cost += cost;
+  bp.cost += pricedCost;
   current.byProvider[provider] = bp;
   await chrome.storage.local.set({ [K.costs]: { ...current, sessionCost: 0 } });
   return current;
